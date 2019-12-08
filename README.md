@@ -5,7 +5,7 @@ Provides a set of Ruby scripts, and a full CLI menu interface, for parsing the (
 
 ***
 
-If  you download your Facebook data, it is provided as a supposedly browsable set of pages. However, the messages.htm page is typically so large it will crash or hang any and every browser that attempts to open it. These tools hopefully give an alternate way to extract the data, with some nicer formatting (and eventually archiving?) thrown in. 
+If  you download your Facebook data, it is provided as a supposedly browsable set of pages. However, the messages.htm page is typically so large it will crash or hang any and every browser that attempts to open it. These tools give a very fast alternate way to extract the data, with some nicer formatting (and eventually archiving?) thrown in. 
 
 To get ahold of the data itself to work with, visit www.facebook.com while signed in, and visit settings. Open the "Your Facebook information" tab, and click to view "Download your information". From here, you can generate a downloadable file containing various information that FB holds on you. Ensuring messages is selected, set the file for preparation, and wait (possibly for quite a while...). Once done, you can point this script at html/messages.htm
 
