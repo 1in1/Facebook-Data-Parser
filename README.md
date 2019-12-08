@@ -1,4 +1,4 @@
-# Facebookl Data Parser
+# Facebook Data Parser
 
 
 Provides a set of Ruby scripts, and a full CLI menu interface, for parsing the (typically enormous) messages.htm file included in Facebooks downloadable data pack. Currently includes tools to list the message threads available, print threads or write them to file, and resolve the jibberish FB IDs given in some files in place of a name.
