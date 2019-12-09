@@ -1,8 +1,6 @@
-require 'rest-client'
+require '.\menu.rb'
+require '.\fbmd.rb'
 
-### Header ###
-#Defining all the constants used here, quite a few
-#Regexp objects as well as strings
 
 BANNER = <<BAN
 
@@ -37,217 +35,6 @@ BANNER = <<BAN
 
 
 BAN
-TERM_STR = '&#064;facebook.com'
-TARG_STR = 'www.facebook.com/'
-HTML_REGEX_NAME = /(?<pre>\"Person\",\"name\":\")(?<inner>[\w\s]*)(?<post>\",\")/
-MSG_REGEX_BODY = /(?<pre><p>)(?<inner>.*)(?<post><\/p>)/
-MSG_REGEX_SNDR = /(?<pre><span class="user">)(?<inner>[\w\s\d&#;.]*)(?<post><\/span>)/
-MSG_REGEX_DATETIME = /(?<pre><span class="meta">)(?<inner>[\w\s\d,:+-]*)(?<post><\/span>)/
-XML_REGEX_PUNCT_CAPTURE = /&(#039|quot);/
-XML_REGEX_PUNCT_REPLACE = {'&#039;' => "'", '&quot;' => '"'}
-
-
-### Begin classes ###
-
-
-#FMmsgdata object holds the data and acts as an interface
-class FBmsgdata
-  class FBmsg
-    def initialize(xmlmsg)
-      @message = xmlmsg[MSG_REGEX_BODY, "inner"]
-      @message.gsub!(XML_REGEX_PUNCT_CAPTURE, XML_REGEX_PUNCT_REPLACE) unless @message == nil
-      @sender = xmlmsg[MSG_REGEX_SNDR, "inner"]   #rip resolved names from the hash table
-      dt = xmlmsg[MSG_REGEX_DATETIME, "inner"].split(" at ")
-      @date = dt[0]
-      @time = dt[1]
-    end
-
-    def msg
-      @message end
-    def sender
-      @sender end
-    def date
-      @date end
-    def time
-      @time end
-  end
-
-
-
-  def initialize(file_path, request_resolve = false)
-      STDERR.print 'Initializing... '
-      @data = Array.new()
-      @id_names = Hash.new()
-      @threads_parsed = Hash.new()
-      File.read(file_path).split('<div class="thread">').each_with_index do |thread, index|
-        @data[index] = thread.split('<div class="message">')
-      end
-      parse_names(request_resolve)
-      #parse_messages()
-      STDERR.puts "Ready."
-  end
-
-  def resolve_name(id)
-    #add in capabilities to grab a cookie to use for private facebooks, add error handling
-    return RestClient.get(TARG_STR + id).body[HTML_REGEX_NAME, "inner"]
-  end
-
-  private :resolve_name
-
-
-
-  def parse_names(request_resolve = false)
-    @data.each_with_index do |t, i|
-      @data[i][0] = @data[i][0].split(", ")
-        #hash acts to avoid multiple resolves
-        @data[i][0].each_with_index do |name, j|
-          if name.include? TERM_STR
-            if @id_names.has_key? name
-              @data[i][0][j] = @id_names[name]
-            else
-              @data[i][0][j] = resolve_name(name.sub(TERM_STR, "")) if request_resolve
-              @data[i][0][j] = 'FB_USER: ' + name.sub(TERM_STR, "") if (request_resolve && @data[i][0][j] == nil) || !request_resolve
-              @id_names[name] = @data[i][0][j]
-            end
-          else
-            @data[i][0][j] = name
-            @id_names[name] = name
-          end
-        end
-    end
-  end
-
-  def resolve_names()
-    @id_names.each do |k, v|
-      @id_names[k] = resolve_name(k.sub(TERM_STR, "")) if k != v
-    end
-  end
-
-  def parse_messages()
-    STDERR.puts 'Processing all messages...'
-    for i in 1..@data.size - 1 do
-      for j in 1..@data[i].size - 1 do
-        STDERR.puts i.to_s + " " + j.to_s
-        @data[i][j] = FBmsg.new(@data[i][j])
-      end
-    end
-  end
-
-  def parse_thread(i)
-    #TODO check thread number is legit
-    for j in 1..@data[i].size - 1 do
-      @data[i][j] = FBmsg.new(@data[i][j])
-    end
-
-    @threads_parsed[i] = true
-  end
-
-  def list_threads(first = 1, last = -1)
-    if first == nil || first < 1
-      STDERR.puts 'Var "first" out of bounds. Setting to 1.'
-      first = 1
-    end
-    if last == nil || last < 1 || last >= @data.size
-      STDERR.puts 'Var "last" out of bounds. Setting to last thread.'
-      last = @data.size - 1
-    end
-    @data.each_with_index do |t, i|
-      puts i.to_s + ": " + t[0].join(", ") if (i >= first && i <= last)
-    end
-  end
-
-
-  def print_thread(num, first = 1, last = -1, reverse=false)
-    parse_thread(num) if !@threads_parsed.include? num
-
-    if first == nil || first < 1
-      STDERR.puts 'Var "first" out of bounds. Setting to 1.'
-      first = 1
-    end
-    if last == nil || last < 1 || last >= @data[num].size
-      STDERR.puts 'Var "last" out of bounds. Setting to last message.'
-      last = @data[num].size - 1
-    end
-
-    puts 'Participants: ' + @data[num][0].join(", ")
-    puts 'Conversation follows: '
-    range = first..last
-    range = range.to_a.reverse if reverse
-    for i in range do
-      print @data[num][i].time
-      print " - "
-      print @data[num][i].sender
-      print ": "
-      puts @data[num][i].msg
-    end
-  end
-
-  def output_thread(path, num, first = 1, last = -1, reverse=false)
-    parse_thread(num) if !@threads_parsed.include? num
-
-    if first == nil || first < 1
-      STDERR.puts 'Var "first" out of bounds. Setting to 1.'
-      first = 1
-    end
-    if last == nil || last < 1 || last >= @data[num].size
-      STDERR.puts 'Var "last" out of bounds. Setting to last message.'
-      last = @data[num].size - 1
-    end
-
-    f = File.open(path, 'w')
-
-
-    f.puts 'Participants: ' + @data[num][0].join(", ")
-    f.puts 'Conversation follows: '
-    range = first..last
-    range = range.to_a.reverse if reverse
-    for i in range do
-      f.print @data[num][i].time
-      f.print " - "
-      f.print @data[num][i].sender
-      f.print ": "
-      f.puts @data[num][i].msg
-    end
-  end
-end
-
-
-#q is a reserved option for quit
-#other options can be defined by Procs supplied in
-#the hash passed as options
-class Menu
-  def initialize(options, desc)
-    @options = options
-    @desc = desc
-    print BANNER
-    print_options()
-  end
-
-  def print_options()
-    puts 'Options: '
-    @desc.each do |k, v|
-      puts ' ' + k + ' - ' + @desc[k]
-    end
-    puts ' q - Quit.'
-  end
-
-  def idle()
-    loop do
-      print '> '
-      input = gets.strip.split
-      if @options.include? input[0]
-        @options[input[0]].call(input)
-      elsif input[0] == 'q' || input[0] == 'Q'
-        break
-      else
-        puts 'Unrecognised input'
-        print_options()
-      end
-    end
-  end
-end
-
-
 
 
 ### SCRIPT RUNTIME BEGINS ###
@@ -257,24 +44,60 @@ print 'Path to messages.htm: '
 path = gets.chomp
 x = FBmsgdata.new(path)
 
+
+### Define procedure calls, what we want our options to do ###
+
+
 print_thread = Proc.new do |args|
-  if args[1] == 'r' || args[1] == 'R'
-     x.print_thread(args[2].to_i, args[3].to_i, args[4].to_i, true)
-   else
-     x.print_thread(args[1].to_i, args[2].to_i, args[3].to_i, false)
-   end
+  if args.length < 2
+    warn 'print_thread: Not enough arguments.'
+    next
+  end
+
+  args.shift  #remove the name of the command
+  for i in 0..args.length do
+    if args[i] == 'r' || args[i] == 'R'
+      args.delete_at(i)
+      args.insert(1, true)
+      break
+    end
+  end
+  args.map! { |f| (f.is_a?(String)) ? (f.to_i):f}
+  x.print_thread(*args)
 end
 
 list_threads = Proc.new do |args|
-  x.list_threads(args[1].to_i, args[2].to_i)
+  args.shift  #remove the name of the command
+  args.map! { |f| (f.is_a?(String)) ? (f.to_i):f} if args != nil
+  x.list_threads(*args)
+end
+
+list_users = Proc.new do |args|
+  args.shift
+  if args.empty?
+    x.list_users()
+  else
+    x.list_users(Regexp.new(args.join(" ")))
+  end
 end
 
 output_thread = Proc.new do |args|
-  if args[2] == 'r' || args[2] == 'R'
-     x.output_thread(args[1], args[3].to_i, args[4].to_i, args[5].to_i, true)
-   else
-     x.output_thread(args[1], args[2].to_i, args[3].to_i, args[4].to_i, false)
-   end
+  if args.length < 3
+    warn 'output_thread: Not enough arguments.'
+    next
+  end
+
+  args.shift  #remove the name of the command
+  path = args.shift
+  for i in 0..args.length do
+    if args[i] == 'r' || args[i] == 'R'
+      args.delete_at(i)
+      args.insert(2, true)
+      break
+    end
+  end
+  args.map! { |f| (f.is_a?(String)) ? (f.to_i):f}
+  x.print_thread(path, *args)
 end
 
 #TODO COME BACK AND CHANGE THE IMPLEMENTATION OF THE PRINTING STUFF EARLIER
@@ -286,12 +109,91 @@ resolve_post_init = Proc.new do |args|
 end
 
 
-o = {'p' => print_thread, 'l' => list_threads, 'o' => output_thread, 'res' => resolve_post_init}
-d = {'p' => 'Prints the messages in the given thread (default all). p x m n will print the xth thread from the mth to the nth message',
+
+
+### SEARCH REQUIRES ITS OWN MENU OBJECT ###
+
+
+
+s_users = Array.new()
+s_text = Array.new()
+
+s_gop = Proc.new do |this, args|
+  if args == 'r' || args == 'R'
+    x.print_search(s_users, s_text, true)
+  else
+    x.print_search(s_users, s_text, false)
+  end
+end
+
+s_goo = Proc.new do |this, args|
+  if args[0] == 'r' || args[0] == 'R'
+    x.output_search(args[1], s_users, s_text, true)
+  elsif  args[1] == 'r' || args[1] == 'R'
+    x.output_search(args[0], s_users, s_text, true)
+  else
+    x.output_search(args, s_users, s_text, true)
+  end
+end
+
+search = Proc.new do |args|
+  begin
+    sd = {'go' => 'Runs search with current settings, without printing.',
+      'gop' => 'Runs and prints search with current settings.',
+      'goo' => 'Runs and outputs search with current settings to file (first arg).',
+      '?' => 'Prints current search settings',
+      'setu' => 'Populates the users array with the arguments given, COMMA SEPARATED.',
+      'setregu' => 'Sets users to a regex, the first argument given.',
+      'sett' => 'Populates the "text to search" array with the arguments given, COMMA SEPARATED.',
+      'setregt' => 'Sets the match regex to the first argument given.',
+      'u' => "Lists participants. Can optionally pass a regex to match against, eg u \bA.* matches everyone who has a name starting with an A.",
+      'r' => 'Reverse the order of output.'}
+
+    so = {'gop' => s_gop,
+    'goo' => s_goo,
+    '?' => Proc.new do
+      print 'Users: '
+      (!(s_users.is_a?(Array) && s_users.empty?)) ? (puts s_users) : (puts 'Any.')
+      print 'Text: '
+      (!(s_text.is_a?(Array) && s_text.empty?)) ? (puts s_text) : (puts 'Any.') end,
+    'setu' => Proc.new do |args|
+      args.shift
+      names = args.join(" ").split(",")
+      s_users = names
+    end,
+    'setregu' => Proc.new do |args|
+      args.shift
+      s_users = Regexp.new(args.join(" "))
+    end,
+    'sett' => Proc.new do |args|
+      args.shift
+      words = args.join(" ").split(",")
+      s_text = words
+    end,
+    'setregt' => Proc.new do |args|
+      args.shift
+      s_text = Regexp.new(args.join(" "))
+    end,
+    'u' => list_users
+    }
+
+
+    sm = Menu.new(so, sd, '', 'search')
+    sm.idle()
+  rescue Interrupt => e
+    return
+  end
+end
+
+
+o = {'p' => print_thread, 'l' => list_threads, 'o' => output_thread, 'res' => resolve_post_init, 'u' => list_users, 's' => search}
+d = {'p' => 'Prints the messages in the given thread. p x m n will print the xth thread from the mth to the nth message',
   'l' => 'Lists the available threads (default all), and participants. l m n will list from the mth the nth thread.',
   'o' => 'Output a thread to file. All p flags work. Must specify a valid path as the first argument, eg o %somepath%\out.txt x m n',
   'res' => "Attempts to resolve the names of users where the data wasn't provided, by GETing the URI.",
-  'r' => 'Reverse the order of output. Works with p, o. Must be specified afterwards, eg p r x m n'}
+  'r' => 'Reverse the order of output. Works with p, o, gop, goo. Eg: p r x m n',
+  'u' => "Lists participants. Can optionally pass a regex to match against, eg u \bA.* matches everyone who has a name starting with an A.",
+  's' => 'Open search mode.'}
 
-m = Menu.new(o, d)
+m = Menu.new(o, d, BANNER)
 m.idle()
